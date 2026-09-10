@@ -45,45 +45,11 @@ app.post('/products', async (req, res) => {
   res.status(201).json(novo)
 })
 
-app.put('/products/:id', async (req, res) => {
-  const id = Number(req.params.id)
-  const { nome, preco } = req.body || {}
-
-  if (!nome || preco === undefined || preco <= 0) {
-    return res.status(400).json({ 
-      erro: 'nome e preço são obrigatórios para PUT (substituição completa)' 
-    })
-  }
-
-  const products = await readProducts()
-  const idx = products.findIndex(u => u.id === id)
-  if (idx === -1) return res.status(404).json({ erro: 'Produto não encontrado' })
-
-  products[idx] = { id, nome, preco }
-
-  await writeProducts(products)
-  res.json(products[idx])  // 200 OK
-})
-
-app.patch('/products/:id', async (req, res) => {
-  const id = Number(req.params.id)
-  const products = await readProducts()
-  const product = products.find(u => u.id === id)
-  if (!product) return res.status(404).json({ erro: 'Produto não encontrado' })
-
-  const { id: _, createdAt: __, updatedAt: ___, ...dadosPermitidos } = req.body || {}
-  Object.assign(product, dadosPermitidos)
-
-  product.updatedAt = new Date().toISOString()
-  
-  await writeProducts(products)
-  res.json(product)  // 200 OK com recurso mesclado
-})
-
 
 app.get('/users', async (req, res) => {
   const users =  await readUsers();
-  res.json(users);
+  res.json(users.filter(u => !u.deletedAt))   // só ativos
+  //res.json(users);
 })
 
 app.post('/users', async (req, res) => {
@@ -135,5 +101,101 @@ app.post('/users/batch', async (req, res) => {
   res.status(201).json(novo)
 })
 
-app.listen(PORT, () => console.log(`Server ta correndo no  http://localhost:${PORT}`),
-);
+
+//Aula 04
+app.put('/products/:id', async (req, res) => {
+  const id = Number(req.params.id)
+  const { nome, preco } = req.body || {}
+
+  if (!nome || preco === undefined || preco <= 0) {
+    return res.status(400).json({ 
+      erro: 'nome e preço são obrigatórios para PUT (substituição completa)' 
+    })
+  }
+
+  const products = await readProducts()
+  const idx = products.findIndex(u => u.id === id)
+  if (idx === -1) return res.status(404).json({ erro: 'Produto não encontrado' })
+
+  products[idx] = { id, nome, preco }
+
+  await writeProducts(products)
+  res.json(products[idx])  // 200 OK
+})
+
+app.patch('/products/:id', async (req, res) => {
+  const id = Number(req.params.id)
+  const products = await readProducts()
+  const product = products.find(u => u.id === id)
+  if (!product) return res.status(404).json({ erro: 'Produto não encontrado' })
+
+  const { id: _, createdAt: __, updatedAt: ___, ...dadosPermitidos } = req.body || {}
+  Object.assign(product, dadosPermitidos)
+
+  product.updatedAt = new Date().toISOString()
+  
+  await writeProducts(products)
+  res.json(product)  // 200 OK com recurso mesclado
+})
+
+//Aula 05
+app.delete('/products/:id', async (req, res) => {
+  const id = Number(req.params.id)
+  const products = await readProducts()
+
+  {/*
+    HARD DELETE
+    const idx = products.findIndex(u => u.id === id)
+    if (idx === -1) return res.status(404).json({ erro: 'Produto não encontrado' })
+
+    products.splice(idx, 1)              // remove do array
+  */}
+
+  // SOFT DELETE
+  const product = products.find(p => p.id === id)
+  if (!product) return res.status(404).json({ erro: 'Produto não encontrado' })
+  if (product.deletedAt) return res.status(409).json({ erro: 'Já removido' })
+  product.deletedAt = new Date().toISOString()  // marca remoção
+
+  await writeProducts(products)
+  res.status(204).end() // 204 = sem conteúdo
+})
+
+
+app.delete('/users/:id', async (req, res) => {
+  const id = Number(req.params.id)
+  const force = req.query.force === 'true'
+  const users = await readUsers()
+  const user = users.find(u => u.id === id)
+  if (!user) return res.status(404).json({ erro: 'Usuário não encontrado' })
+
+  if (force) {
+    const idx = users.findIndex(u => u.id === id)
+    users.splice(idx, 1)
+    await writeUsers(users)
+    return res.status(204).end()
+  }
+  
+  if (user.deletedAt) return res.status(409).json({ erro: 'Já removido' })
+
+  user.deletedAt = new Date().toISOString()  // marca remoção
+  await writeUsers(users)
+  res.status(204).end()
+})
+
+{/* app.patch('/users/:id/restore', async (req, res) => {
+  const id = Number(req.params.id)
+  const users = await readUsers()
+
+  const user = users.find(u => u.id === id)
+
+  if (!user) return res.status(404).json({ erro: 'Não encontrado' })
+
+  user.deletedAt = null
+
+  await writeUsers(users)
+
+  res.json(user)
+})*/}
+
+app.listen(PORT, () => console.log(`Server ta correndo no  http://localhost:${PORT}`),);
