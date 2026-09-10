@@ -8,11 +8,9 @@ const app = express()
 app.use(express.json())
 const PORT = 3000
 
-//1
 app.get('/products', async (req, res) => {
   let products =  await readProducts();
 
-  //3
   const { min } = req.query;
   if (min) {
     products = products.filter((p) => p.preco >= Number(min));
@@ -21,7 +19,6 @@ app.get('/products', async (req, res) => {
   res.json(products);
 })
 
-//2
 app.get('/products/:id', async (req, res) => {
     const products =  await readProducts();
     const product = products.find(p => p.id === Number(req.params.id))
@@ -30,7 +27,6 @@ app.get('/products/:id', async (req, res) => {
     res.json(product);
 })
 
-//4
 app.post('/products', async (req, res) => {
   const { nome, preco } = req.body || {}
 
@@ -48,6 +44,42 @@ app.post('/products', async (req, res) => {
   await writeProducts(products)
   res.status(201).json(novo)
 })
+
+app.put('/products/:id', async (req, res) => {
+  const id = Number(req.params.id)
+  const { nome, preco } = req.body || {}
+
+  if (!nome || preco === undefined || preco <= 0) {
+    return res.status(400).json({ 
+      erro: 'nome e preço são obrigatórios para PUT (substituição completa)' 
+    })
+  }
+
+  const products = await readProducts()
+  const idx = products.findIndex(u => u.id === id)
+  if (idx === -1) return res.status(404).json({ erro: 'Produto não encontrado' })
+
+  products[idx] = { id, nome, preco }
+
+  await writeProducts(products)
+  res.json(products[idx])  // 200 OK
+})
+
+app.patch('/products/:id', async (req, res) => {
+  const id = Number(req.params.id)
+  const products = await readProducts()
+  const product = products.find(u => u.id === id)
+  if (!product) return res.status(404).json({ erro: 'Produto não encontrado' })
+
+  const { id: _, createdAt: __, updatedAt: ___, ...dadosPermitidos } = req.body || {}
+  Object.assign(product, dadosPermitidos)
+
+  product.updatedAt = new Date().toISOString()
+  
+  await writeProducts(products)
+  res.json(product)  // 200 OK com recurso mesclado
+})
+
 
 app.get('/users', async (req, res) => {
   const users =  await readUsers();
