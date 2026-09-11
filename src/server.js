@@ -3,6 +3,7 @@ import { readUsers } from "./db.js";
 import { readProducts } from "./db.js";
 import { writeProducts } from "./db.js";
 import { writeUsers } from "./db.js";
+import { findAll, findById, create, update, remove } from "./services/users.js";
 
 const app = express()
 app.use(express.json())
@@ -13,7 +14,7 @@ app.get('/products', async (req, res) => {
 
   const { min } = req.query;
   if (min) {
-    products = products.filter((p) => p.preco >= Number(min));
+    products = products.filter((product) => product.preco >= Number(min));
   }
 
   res.json(products);
@@ -21,11 +22,15 @@ app.get('/products', async (req, res) => {
 
 app.get('/products/:id', async (req, res) => {
     const products =  await readProducts();
-    const product = products.find(p => p.id === Number(req.params.id))
+    const product = products.find(product => product.id === Number(req.params.id))
     
     if (!product) return res.status(404).json({erro: "Produto não encontrado"});
     res.json(product);
 })
+
+function nextId(items) {
+  return items.length ? Math.max(...items.map(item => item.id)) + 1 : 1
+}
 
 app.post('/products', async (req, res) => {
   const { nome, preco } = req.body || {}
@@ -38,39 +43,39 @@ app.post('/products', async (req, res) => {
   }
 
   const products = await readProducts()
-  const novoId = products.length ? Math.max(...products.map(p => p.id)) + 1 : 1
-  const novo = { id: novoId, nome, preco }
+  const novo = { id: nextId(products), nome, preco }
   products.push(novo)
   await writeProducts(products)
   res.status(201).json(novo)
 })
 
-
 app.get('/users', async (req, res) => {
   const users =  await readUsers();
-  res.json(users.filter(u => !u.deletedAt))   // só ativos
-  //res.json(users);
+  res.json(findAll(users))
 })
 
-app.post('/users', async (req, res) => {
-  const { nome, email } = req.body || {}
-
+function validateUserPayload(body) {
+  const { nome, email } = body || {}
   if (!nome || typeof nome !== 'string') {
-    return res.status(400).json({ erro: 'nome é obrigatório' })
+    return { ok: false, erro: 'nome é obrigatório' }
   }
   if (!email || !email.includes('@')) {
-    return res.status(400).json({ erro: 'email inválido' })
+    return { ok: false, erro: 'email inválido' }
   }
+  return { ok: true, data: { nome, email } }
+}
 
+app.post('/users', async (req, res) => {
+  const valid = validateUserPayload(req.body)
+  if (!valid.ok) return res.status(400).json({ erro: valid.erro })
   const users = await readUsers()
 
   //5
-  if (users.some(u => u.email === email)){
+  if (users.some(u => u.email === valid.data.email)){
     return res.status(409).json({ erro: 'email já cadastrado' })
   }
 
-  const novoId = users.length ? Math.max(...users.map(u => u.id)) + 1 : 1
-  const novo = { id: novoId, nome, email }
+  const novo = { id: nextId(users), ...valid.data }
   users.push(novo)
   await writeUsers(users)
   res.status(201).json(novo)
@@ -93,7 +98,7 @@ app.post('/users/batch', async (req, res) => {
     }
   }
 
-  let novoId = users.length ? Math.max(...users.map(u => u.id)) + 1 : 1
+  let novoId = nextId(users)
   const novo = newUsers.map(u => ({ id: novoId++, ...u }))
   users.push(...novo)
 
@@ -114,13 +119,13 @@ app.put('/products/:id', async (req, res) => {
   }
 
   const products = await readProducts()
-  const idx = products.findIndex(u => u.id === id)
-  if (idx === -1) return res.status(404).json({ erro: 'Produto não encontrado' })
+  const index = products.findIndex(product => product.id === id)
+  if (index === -1) return res.status(404).json({ erro: 'Produto não encontrado' })
 
-  products[idx] = { id, nome, preco }
+  products[index] = { id, nome, preco }
 
   await writeProducts(products)
-  res.json(products[idx])  // 200 OK
+  res.json(products[index])  // 200 OK
 })
 
 app.patch('/products/:id', async (req, res) => {
@@ -136,6 +141,21 @@ app.patch('/products/:id', async (req, res) => {
   
   await writeProducts(products)
   res.json(product)  // 200 OK com recurso mesclado
+})
+
+app.put('/users/:id', async (req, res) => {
+  const id = Number(req.params.id)
+  const valid = validateUserPayload(req.body)
+  if (!valid.ok) return res.status(400).json({ erro: valid.erro })
+
+  const users = await readUsers()
+  const idx = users.findIndex(u => u.id === id)
+  if (idx === -1) return res.status(404).json({ erro: 'Usuário não encontrado' })
+
+  users[idx] = { id, ...valid.data }
+  
+  await writeUsers(users)
+  res.json(users[idx])  // 200 OK
 })
 
 //Aula 05
