@@ -1,84 +1,44 @@
-import express from 'express';
-import { readUsers } from "./db.js";
-import { readProducts } from "./db.js";
-import { writeProducts } from "./db.js";
-import { writeUsers } from "./db.js";
-import { findAll, findById, create, update, remove } from "./services/users.js";
+// Só monta o app: middlewares globais, routers e middleware de erro.
+import express from 'express'
+import productsRouter from './routes/products.routes.js'
+import { readUsers, writeUsers } from "./db.js";
+import { findAll, findById, create, update, remove } from "./services/users.service.js";
 
 const app = express()
-app.use(express.json())
+app.use(express.json()) // traduz o corpo JSON da requisição
 const PORT = 3000
 
-app.get('/products', async (req, res) => {
-  let products =  await readProducts();
+app.use('/products', productsRouter) // tudo que começa com /products vai para o router de products
 
-  const { min } = req.query;
-  if (min) {
-    products = products.filter((product) => product.preco >= Number(min));
-  }
-
-  res.json(products);
-})
-
-app.get('/products/:id', async (req, res) => {
-    const products =  await readProducts();
-    const product = products.find(product => product.id === Number(req.params.id))
-    
-    if (!product) return res.status(404).json({erro: "Produto não encontrado"});
-    res.json(product);
-})
-
-function nextId(items) {
-  return items.length ? Math.max(...items.map(item => item.id)) + 1 : 1
-}
-
-app.post('/products', async (req, res) => {
-  const { nome, preco } = req.body || {}
-
-  if (!nome || typeof nome !== 'string') {
-    return res.status(400).json({ erro: 'Nome é obrigatório e deve ser uma string' })
-  }
-  if (!preco || typeof preco !== 'number' || preco <= 0) {
-    return res.status(400).json({ erro: 'Preço é obrigatório e deve ser um número positivo' })
-  }
-
-  const products = await readProducts()
-  const novo = { id: nextId(products), nome, preco }
-  products.push(novo)
-  await writeProducts(products)
-  res.status(201).json(novo)
-})
 
 app.get('/users', async (req, res) => {
   const users =  await readUsers();
   res.json(findAll(users))
 })
 
+function nextId(items) {
+  return items.length ? Math.max(...items.map(item => item.id)) + 1 : 1
+}
+
 function validateUserPayload(body) {
   const { nome, email } = body || {}
-  if (!nome || typeof nome !== 'string') {
-    return { ok: false, erro: 'nome é obrigatório' }
-  }
-  if (!email || !email.includes('@')) {
-    return { ok: false, erro: 'email inválido' }
-  }
+  if (!nome || typeof nome !== 'string') { return { ok: false, erro: 'nome é obrigatório' } }
+  if (!email || !email.includes('@')) { return { ok: false, erro: 'email inválido' }}
   return { ok: true, data: { nome, email } }
 }
 
 app.post('/users', async (req, res) => {
-  const valid = validateUserPayload(req.body)
-  if (!valid.ok) return res.status(400).json({ erro: valid.erro })
-  const users = await readUsers()
+  try {
+    const valid = validateUserPayload(req.body)
 
-  //5
-  if (users.some(u => u.email === valid.data.email)){
-    return res.status(409).json({ erro: 'email já cadastrado' })
-  }
+    if (!valid.ok) return res.status(400).json({ erro: valid.erro })
 
-  const novo = { id: nextId(users), ...valid.data }
-  users.push(novo)
-  await writeUsers(users)
-  res.status(201).json(novo)
+    const users = await readUsers()
+
+    const novo = createUser( users, valid.data.nome, valid.data.email )
+    await writeUsers(users)
+    res.status(201).json(novo)
+  } catch (err) { next(err) }
 })
 
 //6
@@ -87,15 +47,9 @@ app.post('/users/batch', async (req, res) => {
 
   const users = await readUsers()
   for (const user of newUsers) {
-    if (!user.nome || typeof user.nome !== 'string') {
-      return res.status(400).json({ erro: 'nome é obrigatório' })
-    }
-    if (!user.email || !user.email.includes('@')) {
-      return res.status(400).json({ erro: 'email inválido' })
-    }
-    if (users.some(u => u.email === user.email)){
-      return res.status(409).json({ erro: 'email já cadastrado' })
-    }
+    if (!user.nome || typeof user.nome !== 'string') { return res.status(400).json({ erro: 'nome é obrigatório' }) }
+    if (!user.email || !user.email.includes('@')) { return res.status(400).json({ erro: 'email inválido' }) }
+    if (users.some(u => u.email === user.email)){ return res.status(409).json({ erro: 'email já cadastrado' }) }
   }
 
   let novoId = nextId(users)
@@ -108,41 +62,6 @@ app.post('/users/batch', async (req, res) => {
 
 
 //Aula 04
-app.put('/products/:id', async (req, res) => {
-  const id = Number(req.params.id)
-  const { nome, preco } = req.body || {}
-
-  if (!nome || preco === undefined || preco <= 0) {
-    return res.status(400).json({ 
-      erro: 'nome e preço são obrigatórios para PUT (substituição completa)' 
-    })
-  }
-
-  const products = await readProducts()
-  const index = products.findIndex(product => product.id === id)
-  if (index === -1) return res.status(404).json({ erro: 'Produto não encontrado' })
-
-  products[index] = { id, nome, preco }
-
-  await writeProducts(products)
-  res.json(products[index])  // 200 OK
-})
-
-app.patch('/products/:id', async (req, res) => {
-  const id = Number(req.params.id)
-  const products = await readProducts()
-  const product = products.find(u => u.id === id)
-  if (!product) return res.status(404).json({ erro: 'Produto não encontrado' })
-
-  const { id: _, createdAt: __, updatedAt: ___, ...dadosPermitidos } = req.body || {}
-  Object.assign(product, dadosPermitidos)
-
-  product.updatedAt = new Date().toISOString()
-  
-  await writeProducts(products)
-  res.json(product)  // 200 OK com recurso mesclado
-})
-
 app.put('/users/:id', async (req, res) => {
   const id = Number(req.params.id)
   const valid = validateUserPayload(req.body)
@@ -159,17 +78,17 @@ app.put('/users/:id', async (req, res) => {
 })
 
 //Aula 05
+{/*
 app.delete('/products/:id', async (req, res) => {
   const id = Number(req.params.id)
   const products = await readProducts()
 
-  {/*
-    HARD DELETE
+    //HARD DELETE
     const idx = products.findIndex(u => u.id === id)
     if (idx === -1) return res.status(404).json({ erro: 'Produto não encontrado' })
 
     products.splice(idx, 1)              // remove do array
-  */}
+  
 
   // SOFT DELETE
   const product = products.find(p => p.id === id)
@@ -180,7 +99,7 @@ app.delete('/products/:id', async (req, res) => {
   await writeProducts(products)
   res.status(204).end() // 204 = sem conteúdo
 })
-
+*/}
 
 app.delete('/users/:id', async (req, res) => {
   const id = Number(req.params.id)
@@ -218,4 +137,6 @@ app.delete('/users/:id', async (req, res) => {
   res.json(user)
 })*/}
 
+
+app.use((err, req, res, next) => { res.status(err.status || 500).json({ erro: err.message }) }) // Middleware global de erro: o "plano B" de qualquer next(err)
 app.listen(PORT, () => console.log(`Server ta correndo no  http://localhost:${PORT}`),);
