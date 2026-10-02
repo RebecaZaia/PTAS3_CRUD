@@ -2,7 +2,7 @@
 import express from 'express'
 import productsRouter from './routes/products.routes.js'
 import { readUsers, writeUsers } from "./db.js";
-import { findAll, findById, create, update, remove } from "./services/users.service.js";
+import { findAll, findById, createUser, updateUser, remove } from "./services/users.service.js";
 
 const app = express()
 app.use(express.json()) // traduz o corpo JSON da requisição
