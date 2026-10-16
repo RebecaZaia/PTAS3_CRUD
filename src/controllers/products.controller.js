@@ -26,17 +26,10 @@ export async function getProduct(req, res, next) {
   } catch (err) {next(err)}
 }
 
+
 export async function createProduct(req, res, next) {
   try {
-    const { nome, preco } = req.body || {}
-
-    if (!nome || typeof nome !== 'string') {
-      return res.status(400).json({ erro: 'Nome é obrigatório e deve ser uma string' })
-    }
-    if (!preco || typeof preco !== 'number' || preco <= 0) {
-      return res.status(400).json({ erro: 'Preço é obrigatório e deve ser um número positivo' })
-    }
-
+    const { nome, preco } = req.body
     const novo = await productsModel.create({ nome, preco })
     res.status(201).json(novo)
   } catch (err) { next(err) }
@@ -45,15 +38,13 @@ export async function createProduct(req, res, next) {
 export async function updateProduct(req, res, next) {
   try {
     const id = Number(req.params.id)
-    const { nome, preco } = req.body || {}
+    const { nome, preco } = req.body
 
-    if (!nome || preco === undefined || preco <= 0) {
-      return res.status(400).json({ erro: 'nome e preço são obrigatórios para PUT (substituição completa)'})
+    const product = await productsModel.update(id, { nome, preco })
+
+    if (!product) {
+      return res.status(404).json({ erro: 'Produto não encontrado'})
     }
-
-    const product = await productsModel.update(id, {nome, preco})
-
-    if (!product) { return res.status(404).json({erro: 'Produto não encontrado'}) }
 
     res.json(product)
 

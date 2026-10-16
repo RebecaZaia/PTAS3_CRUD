@@ -3,6 +3,8 @@ import express from 'express'
 import productsRouter from './routes/products.routes.js'
 import { readUsers, writeUsers } from "./db.js";
 import { findAll, findById, createUser, updateUser, remove } from "./services/users.service.js";
+import { valida } from './middlewares/valida.js'
+import { userSchema, userBatchSchema } from './schemas/user.schema.js'
 
 const app = express()
 app.use(express.json()) // traduz o corpo JSON da requisição
@@ -20,62 +22,60 @@ function nextId(items) {
   return items.length ? Math.max(...items.map(item => item.id)) + 1 : 1
 }
 
-function validateUserPayload(body) {
-  const { nome, email } = body || {}
-  if (!nome || typeof nome !== 'string') { return { ok: false, erro: 'nome é obrigatório' } }
-  if (!email || !email.includes('@')) { return { ok: false, erro: 'email inválido' }}
-  return { ok: true, data: { nome, email } }
-}
-
-app.post('/users', async (req, res) => {
+app.post('/users', valida(userSchema), async (req, res, next) => {
   try {
-    const valid = validateUserPayload(req.body)
-
-    if (!valid.ok) return res.status(400).json({ erro: valid.erro })
+    const { nome, email } = req.body
 
     const users = await readUsers()
+    const novo = createUser(users, nome, email)
 
-    const novo = createUser( users, valid.data.nome, valid.data.email )
     await writeUsers(users)
     res.status(201).json(novo)
+
+  } catch (err) {next(err)}
+})
+
+app.post('/users/batch', valida(userBatchSchema), async (req, res, next) => {
+  try {
+    const newUsers = req.body
+    const users = await readUsers()
+
+    for (const user of newUsers) {
+      if (users.some(u => u.email === user.email)) {
+        return res.status(409).json({ erro: 'email já cadastrado' })
+      }
+    }
+
+    let novoId = nextId(users)
+    const novo = newUsers.map(u => ({ id: novoId++, ...u }))
+    users.push(...novo)
+
+    await writeUsers(users)
+    res.status(201).json(novo)
+
+  } catch (err) {next(err)}
+})
+
+
+app.put('/users/:id', valida(userSchema), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id)
+    const { nome, email } = req.body
+
+    const users = await readUsers()
+    const idx = users.findIndex(u => u.id === id)
+
+    if (idx === -1) {
+      return res.status(404).json({erro: 'Usuário não encontrado'})
+    }
+
+    users[idx] = { id, nome, email }
+    await writeUsers(users)
+    res.json(users[idx])
+
   } catch (err) { next(err) }
 })
 
-//6
-app.post('/users/batch', async (req, res) => {
-  const newUsers = req.body || []
-
-  const users = await readUsers()
-  for (const user of newUsers) {
-    if (!user.nome || typeof user.nome !== 'string') { return res.status(400).json({ erro: 'nome é obrigatório' }) }
-    if (!user.email || !user.email.includes('@')) { return res.status(400).json({ erro: 'email inválido' }) }
-    if (users.some(u => u.email === user.email)){ return res.status(409).json({ erro: 'email já cadastrado' }) }
-  }
-
-  let novoId = nextId(users)
-  const novo = newUsers.map(u => ({ id: novoId++, ...u }))
-  users.push(...novo)
-
-  await writeUsers(users)
-  res.status(201).json(novo)
-})
-
-
-//Aula 04
-app.put('/users/:id', async (req, res) => {
-  const id = Number(req.params.id)
-  const valid = validateUserPayload(req.body)
-  if (!valid.ok) return res.status(400).json({ erro: valid.erro })
-
-  const users = await readUsers()
-  const idx = users.findIndex(u => u.id === id)
-  if (idx === -1) return res.status(404).json({ erro: 'Usuário não encontrado' })
-
-  users[idx] = { id, ...valid.data }
-  
-  await writeUsers(users)
-  res.json(users[idx])  // 200 OK
-})
 
 //Aula 05
 {/*

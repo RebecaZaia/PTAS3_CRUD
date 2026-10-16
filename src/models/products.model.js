@@ -17,11 +17,12 @@ export const productsModel = {
   // Cria um produto novo, gerando o id como "maior id atual + 1"
   async create(data) {
     const products = await readProducts()
-    const id = this.nextId(products)
+    const id = await this.nextId(products)
     const novo = { id, ...data }
     products.push(novo)
     await writeProducts(products)
     return novo
+
   },
 
   async update(id, data) {
